@@ -1,6 +1,8 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstdint>
+#include <chrono>
+#include <unordered_set>
 #include <complex>
 #include <SDL2/SDL.h>
 
@@ -19,7 +21,7 @@ public:
 	int height;
 
 	int max_iterations = 1;
-	int current = 0;
+	std::pair<int, int> current = {0, 0};
 
 	MandelbrotRenderer()
 	{
@@ -45,7 +47,6 @@ public:
 		int width = this->width;
 		int height = this->height;
 
-		// Convert x and y to mathematical
 		double zx = (double)x * (xb - xa) / width + xa;
 		double zy = (double)y * (yb - ya) / height + ya;
 
@@ -94,20 +95,43 @@ public:
 
 			if (event.type == SDL_WINDOWEVENT)
 			{
-				// Reset surface and sizes
 				SDL_GetWindowSize(this->window, &width, &height);
 				surface = SDL_CreateRGBSurface(0, this->width, this->height, 32, 0, 0, 0, 0);
+				this->current = {0, 0};
+				this->max_iterations = 0;
 			}
 		}
 
-		for (int i = 0; i < this->width; i++)
+		// Draw for 16 ms before going to update
+
+		auto start = std::chrono::system_clock::now();
+
+		int pixels_drawn = 0;
+		int j;
+		int i;
+		for (j = this->current.second; j < this->height; j++)
 		{
-			for (int j = 0; j < this->height; j++)
+			for (i = this->current.first; i < this->width; i++)
 			{
 				int iters = escapeIterations(i, j, 2);
 				SetPixel(i, j, (iters * 10));
+				pixels_drawn++;
+
+				if (pixels_drawn % 10000 == 0)
+				{
+					if (std::chrono::system_clock::now() > (start + std::chrono::milliseconds(16)))
+						break;
+				}
 			}
 		}
+
+		if (i >= this->width - 1 && j >= this->height - 1)
+		{
+			this->max_iterations++;
+		}
+
+		this->current.first = i % this->width;
+		this->current.second = j % this->height;
 
 		BlitSurface();
 	}
