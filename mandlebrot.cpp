@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <chrono>
-#include <unordered_set>
+#include <unordered_map>
 #include <complex>
 #include <SDL2/SDL.h>
 
@@ -22,6 +22,7 @@ public:
 
 	int max_iterations = 1;
 	std::pair<int, int> current = {0, 0};
+	std::unordered_map<long, int> escaped;
 
 	MandelbrotRenderer()
 	{
@@ -43,12 +44,17 @@ public:
 
 	int escapeIterations(int x, int y, double multibrotPower)
 	{
+		if (escaped.count((long)x | ((long)y << 32)))
+		{
+			return escaped[(long)x | ((long)y << 32)];
+		}
+
 		using namespace std::complex_literals;
 		int width = this->width;
 		int height = this->height;
 
-		double zx = (double)x * (xb - xa) / width + xa;
-		double zy = (double)y * (yb - ya) / height + ya;
+		double zx = (long double)x * (xb - xa) / width + xa;
+		double zy = (long double)y * (yb - ya) / height + ya;
 
 		std::complex<double> z(zx, zy);
 		std::complex<double> c = z;
@@ -59,11 +65,12 @@ public:
 
 			if (abs(z) > 2.0f)
 			{
+				escaped[(long)x | ((long)y << 32)] = i;
 				return i;
 			}
 		}
 
-		return -1;
+		return max_iterations;
 	}
 
 	void BlitSurface()
@@ -78,8 +85,17 @@ public:
 
 		Uint8 *target_pixel = (Uint8 *)this->surface->pixels + y * this->surface->pitch + x * 4;
 		target_pixel[0] = val & 0xff;
-		target_pixel[1] = (val << 8) & 0xff;
-		target_pixel[2] = (val << 16) & 0xff;
+		target_pixel[1] = (val >> 8) & 0xff;
+		target_pixel[2] = (val >> 16) & 0xff;
+	}
+
+	void RestartRender()
+	{
+		SDL_GetWindowSize(this->window, &width, &height);
+		surface = SDL_CreateRGBSurface(0, this->width, this->height, 32, 0, 0, 0, 0);
+		this->current = {0, 0};
+		this->max_iterations = 1;
+		escaped.clear();
 	}
 
 	void Update()
@@ -95,14 +111,9 @@ public:
 
 			if (event.type == SDL_WINDOWEVENT)
 			{
-				SDL_GetWindowSize(this->window, &width, &height);
-				surface = SDL_CreateRGBSurface(0, this->width, this->height, 32, 0, 0, 0, 0);
-				this->current = {0, 0};
-				this->max_iterations = 0;
+				RestartRender();
 			}
 		}
-
-		// Draw for 16 ms before going to update
 
 		auto start = std::chrono::system_clock::now();
 
@@ -114,7 +125,14 @@ public:
 			for (i = this->current.first; i < this->width; i++)
 			{
 				int iters = escapeIterations(i, j, 2);
-				SetPixel(i, j, (iters * 10));
+				int v = (iters * 255) / max_iterations;
+
+				int pixel = 0;
+				pixel |= v;	  // Blue
+				pixel |= v << 8;  // Green
+				pixel |= v << 16; // Red
+
+				SetPixel(i, j, pixel);
 				pixels_drawn++;
 
 				if (pixels_drawn % 10000 == 0)
